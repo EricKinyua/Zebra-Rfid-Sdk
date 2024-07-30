@@ -227,7 +227,35 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
         }
         return  readersListArray;
     }
-
+    
+    public void locateTag(final String tagID, final Result result) {
+        if (!isReaderConnected()) {
+            result.error("UNAVAILABLE", "Reader not connected", null);
+            return;
+        }
+    
+        new AsyncTask<Void, Void, String>() {
+            @Override
+            protected String doInBackground(Void... voids) {
+                try {
+                    reader.Actions.TagLocationing.Perform(tagID, null, null);
+                    Thread.sleep(5000);  // Wait for 5 seconds to locate the tag
+                    return "Tag location started";
+                } catch (InvalidUsageException | OperationFailureException | InterruptedException e) {
+                    return "Tag location failed: " + e.getMessage();
+                }
+            }
+    
+            @Override
+            protected void onPostExecute(String resultMessage) {
+                if (resultMessage.startsWith("Tag location failed")) {
+                    result.error("UNAVAILABLE", resultMessage, null);
+                } else {
+                    result.success(resultMessage);
+                }
+            }
+        }.execute();
+    }
 
     public class IEventHandler implements RfidEventsListener {
         @Override

@@ -46,6 +46,10 @@ public class ZebraRfidSdkPlugin implements FlutterPlugin, MethodCallHandler, Str
   @Override
   public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
     switch (call.method) {
+      case "locateTag":
+        String tagID = call.argument("tagID");
+        rfidHandler.locateTag(tagID, result);
+        break;
       case "getPlatformVersion":
         result.success("Android " + android.os.Build.VERSION.RELEASE);
         break;

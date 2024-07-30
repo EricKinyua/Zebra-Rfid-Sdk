@@ -19,6 +19,10 @@ class ZebraRfidSdkPlugin {
     return _channel.invokeMethod('toast', {"text": text});
   }
 
+  static Future<dynamic> locateTag(String tagID) async {
+    return _channel.invokeMethod('locateTag', {'tagID': tagID});
+  }
+
   ///
   static Future<dynamic> onRead() async {
     return _channel.invokeMethod('startRead');
@@ -36,6 +40,7 @@ class ZebraRfidSdkPlugin {
       var result = await _channel.invokeMethod('connect');
       return result;
     } catch (e) {
+      // ignore: unused_local_variable
       var a = e;
     }
   }
