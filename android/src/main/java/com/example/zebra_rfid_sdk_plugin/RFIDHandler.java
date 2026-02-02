@@ -41,6 +41,7 @@ import io.flutter.plugin.common.MethodChannel.Result;
 public class RFIDHandler implements Readers.RFIDReaderEventHandler {
     private String TAG = "RFIDHandler";
     Context context;
+    CompatibleContext compatibleContext; 
 
     public Handler mEventHandler = new Handler(Looper.getMainLooper());
     private AsyncTask<Void, Void, String> AutoConnectDeviceTask;
@@ -70,6 +71,9 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
     RFIDHandler(Context _context) {
         context = _context;
 
+        // Wrap the context to handle Android 13+ receiver registration
+        compatibleContext = new CompatibleContext(_context);
+
     }
 
     public void setEventSink(EventChannel.EventSink _sink){
@@ -85,7 +89,8 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
     public void connectToReader(final String readerName, final Result result) {
         Readers.attach(this);
         if (readers == null) {
-            readers = new Readers(context, ENUM_TRANSPORT.ALL);
+           // Use compatibleContext instead of context
+           readers = new Readers(compatibleContext, ENUM_TRANSPORT.ALL);
         }
         AutoConnectDevice(readerName, null, result);
     }
@@ -214,7 +219,7 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
 
             // Create new Readers instance with specific transport
             if (readers == null) {
-                readers = new Readers(context, transport);
+                readers = new Readers(compatibleContext, transport);
                 Readers.attach(this);
             }
 
@@ -260,7 +265,7 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
 
                     // Create new Readers instance with specific transport
                     if (readers == null) {
-                        readers = new Readers(context, transport);
+                        readers = new Readers(compatibleContext, transport);
                         Readers.attach(this);
                     }
 
@@ -370,7 +375,7 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
 
                     for (ENUM_TRANSPORT transport : transports) {
                         try {
-                            Readers tempReaders = new Readers(context, transport);
+                            Readers tempReaders = new Readers(compatibleContext, transport);
                             ArrayList<ReaderDevice> devices = tempReaders.GetAvailableRFIDReaderList();
                             
                             for (ReaderDevice device : devices) {
@@ -402,7 +407,7 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
 
                     // Also check with ALL transport as fallback
                     try {
-                        Readers allReaders = new Readers(context, ENUM_TRANSPORT.ALL);
+                        Readers allReaders = new Readers(compatibleContext, ENUM_TRANSPORT.ALL);
                         ArrayList<ReaderDevice> devices = allReaders.GetAvailableRFIDReaderList();
                         
                         for (ReaderDevice device : devices) {
