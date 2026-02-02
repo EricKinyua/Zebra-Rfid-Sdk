@@ -23,7 +23,7 @@ class ZebraRfidSdkPlugin {
     return _channel.invokeMethod('locateTag', {'tagID': tagID});
   }
 
-   static Future<List<String?>> get getReadersList async {
+   static Future<List<String?>> getReadersList async {
     final String version = await _channel.invokeMethod('getReadersList');
     return version;
   }
