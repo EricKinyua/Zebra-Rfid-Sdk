@@ -23,11 +23,6 @@ class ZebraRfidSdkPlugin {
     return _channel.invokeMethod('locateTag', {'tagID': tagID});
   }
 
-   static Future<List<String?>> getReadersList async {
-    final String version = await _channel.invokeMethod('getReadersList');
-    return version;
-  }
-
   ///
   static Future<dynamic> onRead() async {
     return _channel.invokeMethod('startRead');
@@ -47,6 +42,46 @@ class ZebraRfidSdkPlugin {
     } catch (e) {
       // ignore: unused_local_variable
       var a = e;
+    }
+  }
+
+  ///connect to a specific reader by name
+  ///[readerName] optional - if null, auto-selects first available reader
+  static Future<dynamic> connectToReader({String? readerName}) async {
+    try {
+      await _addEventChannelHandler();
+      var result = await _channel
+          .invokeMethod('connectToReader', {'readerName': readerName});
+      return result;
+    } catch (e) {
+      // ignore: unused_local_variable
+      var a = e;
+    }
+  }
+
+  ///get available readers list
+  ///Returns list of available readers with name, address, and transport type
+  static Future<List<Map<String, dynamic>>> getAvailableReaders() async {
+    try {
+      final result = await _channel.invokeMethod('getAvailableReaders');
+      if (result == null) return [];
+      final List<dynamic> readersList = List<dynamic>.from(result);
+      return readersList
+          .map((reader) => Map<String, dynamic>.from(reader))
+          .toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  ///get current connection type
+  ///Returns current transport type (USB/Bluetooth/Serial) or null if not connected
+  static Future<String?> getConnectionType() async {
+    try {
+      final result = await _channel.invokeMethod('getConnectionType');
+      return result as String?;
+    } catch (e) {
+      return null;
     }
   }
 

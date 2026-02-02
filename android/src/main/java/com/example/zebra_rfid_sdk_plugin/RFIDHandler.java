@@ -48,6 +48,7 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
     //    private static ArrayList<ReaderDevice> availableRFIDReaderList;
     private static ReaderDevice readerDevice;
     private static RFIDReader reader;
+    private static ENUM_TRANSPORT currentTransport = null;
     private int MAX_POWER = 270;
     private IEventHandler eventHandler = new IEventHandler();
     private Function<String, Map<String, Object>> _emit;
@@ -77,12 +78,16 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
 
     @SuppressLint("StaticFieldLeak")
     public void connect(final Result result) {
+        connectToReader(null, result);
+    }
+
+    @SuppressLint("StaticFieldLeak")
+    public void connectToReader(final String readerName, final Result result) {
         Readers.attach(this);
         if (readers == null) {
-            readers = new Readers(context,ENUM_TRANSPORT.ALL);
-            //readers = new Readers(context, ENUM_TRANSPORT.SERVICE_SERIAL);
+            readers = new Readers(context, ENUM_TRANSPORT.ALL);
         }
-        AutoConnectDevice(result);
+        AutoConnectDevice(readerName, null, result);
     }
 
     public void dispose() {
@@ -90,6 +95,7 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
             if (readers != null) {
                 readerDevice=null;
                 reader = null;
+                currentTransport = null;
                 readers.Dispose();
                 readers = null;
                 HashMap<String, Object> map =new HashMap<>();
@@ -103,18 +109,48 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
 
 
     @SuppressLint("StaticFieldLeak")
-    public void AutoConnectDevice(final Result result) {
+    public void AutoConnectDevice(final String readerName, final ENUM_TRANSPORT preferredTransport, final Result result) {
         AutoConnectDeviceTask = new AsyncTask<Void, Void, String>() {
             @Override
             protected String doInBackground(Void... voids) {
-                Log.d(TAG, "CreateInstanceTask");
+                Log.d(TAG, "AutoConnectDevice - readerName: " + readerName + ", preferredTransport: " + preferredTransport);
                 try {
+                    // If a specific reader name is provided, search for it
+                    if (readerName != null && !readerName.isEmpty()) {
+                        return connectToSpecificReader(readerName);
+                    }
 
+                    // If preferred transport is specified, try that first
+                    if (preferredTransport != null) {
+                        String error = tryConnectWithTransport(preferredTransport);
+                        if (error == null) {
+                            return null; // Success
+                        }
+                        Log.d(TAG, "Failed to connect with preferred transport: " + error);
+                    }
+
+                    // Try transports in priority order: BLUETOOTH -> SERVICE_USB -> SERVICE_SERIAL
+                    ENUM_TRANSPORT[] transports = {
+                        ENUM_TRANSPORT.BLUETOOTH,
+                        ENUM_TRANSPORT.SERVICE_USB,
+                        ENUM_TRANSPORT.SERVICE_SERIAL
+                    };
+
+                    for (ENUM_TRANSPORT transport : transports) {
+                        String error = tryConnectWithTransport(transport);
+                        if (error == null) {
+                            return null; // Success
+                        }
+                        Log.d(TAG, "Failed to connect with transport " + transport + ": " + error);
+                    }
+
+                    // Fallback to ALL transport (original behavior)
                     if (readerDevice == null) {
                         ArrayList<ReaderDevice> readersListArray = readers.GetAvailableRFIDReaderList();
                         if (readersListArray.size() > 0) {
                             readerDevice = readersListArray.get(0);
                             reader = readerDevice.getRFIDReader();
+                            currentTransport = ENUM_TRANSPORT.ALL;
                         } else {
                             return "No connectable device detected";
                         }
@@ -128,13 +164,9 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
                 } catch (InvalidUsageException ex) {
                     Log.d(TAG, "InvalidUsageException");
                     return ex.getMessage();
-
-//                    exceptionIN = ex;
                 } catch (OperationFailureException e) {
                     String details = e.getStatusDescription();
-                    String a= e.getVendorMessage();
                     return details;
-//                    exception = e;
                 }
                 return null;
             }
@@ -150,6 +182,13 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
                 HashMap<String, Object> map =new HashMap<>();
                 map.put("status",status.ordinal());
                 emit(Base.RfidEngineEvents.ConnectionStatus,map);
+                if (result != null) {
+                    if (error != null) {
+                        result.error("CONNECTION_FAILED", error, null);
+                    } else {
+                        result.success("Connected");
+                    }
+                }
             }
 
             @Override
@@ -159,8 +198,95 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
             }
 
         }.execute();
+    }
 
+    private String tryConnectWithTransport(ENUM_TRANSPORT transport) {
+        try {
+            // Dispose existing readers if transport changed
+            if (readers != null && currentTransport != null && currentTransport != transport) {
+                try {
+                    readers.Dispose();
+                } catch (Exception e) {
+                    // Ignore dispose errors
+                }
+                readers = null;
+            }
 
+            // Create new Readers instance with specific transport
+            if (readers == null) {
+                readers = new Readers(context, transport);
+                Readers.attach(this);
+            }
+
+            ArrayList<ReaderDevice> readersListArray = readers.GetAvailableRFIDReaderList();
+            if (readersListArray.size() > 0) {
+                readerDevice = readersListArray.get(0);
+                reader = readerDevice.getRFIDReader();
+                currentTransport = transport;
+
+                if (reader != null && !reader.isConnected()) {
+                    reader.connect();
+                    ConfigureReader();
+                    return null; // Success
+                }
+                return "Reader found but connection failed";
+            }
+            return "No readers found on " + transport;
+        } catch (InvalidUsageException | OperationFailureException e) {
+            return e.getMessage();
+        }
+    }
+
+    private String connectToSpecificReader(String readerName) {
+        try {
+            // Try all transports to find the reader
+            ENUM_TRANSPORT[] transports = {
+                ENUM_TRANSPORT.BLUETOOTH,
+                ENUM_TRANSPORT.SERVICE_USB,
+                ENUM_TRANSPORT.SERVICE_SERIAL
+            };
+
+            for (ENUM_TRANSPORT transport : transports) {
+                try {
+                    // Dispose existing readers if transport changed
+                    if (readers != null && currentTransport != null && currentTransport != transport) {
+                        try {
+                            readers.Dispose();
+                        } catch (Exception e) {
+                            // Ignore dispose errors
+                        }
+                        readers = null;
+                    }
+
+                    // Create new Readers instance with specific transport
+                    if (readers == null) {
+                        readers = new Readers(context, transport);
+                        Readers.attach(this);
+                    }
+
+                    ArrayList<ReaderDevice> readersListArray = readers.GetAvailableRFIDReaderList();
+                    for (ReaderDevice device : readersListArray) {
+                        if (device.getName() != null && device.getName().contains(readerName)) {
+                            readerDevice = device;
+                            reader = readerDevice.getRFIDReader();
+                            currentTransport = transport;
+
+                            if (reader != null && !reader.isConnected()) {
+                                reader.connect();
+                                ConfigureReader();
+                                return null; // Success
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.d(TAG, "Error trying transport " + transport + ": " + e.getMessage());
+                }
+            }
+
+            return "Reader '" + readerName + "' not found";
+        } catch (Exception e) {
+            return "Error searching for reader: " + e.getMessage();
+        }
     }
 
     private boolean isReaderConnected() {
@@ -226,6 +352,118 @@ public class RFIDHandler implements Readers.RFIDReaderEventHandler {
 //            emit(Base.RfidEngineEvents.Error, transitionEntity(Base.ErrorResult.error(error)));
         }
         return  readersListArray;
+    }
+
+    ///Get available readers with metadata
+    public void getAvailableReaders(final Result result) {
+        new AsyncTask<Void, Void, ArrayList<HashMap<String, Object>>>() {
+            @Override
+            protected ArrayList<HashMap<String, Object>> doInBackground(Void... voids) {
+                ArrayList<HashMap<String, Object>> readersList = new ArrayList<>();
+                try {
+                    // Try all transports to get complete list
+                    ENUM_TRANSPORT[] transports = {
+                        ENUM_TRANSPORT.BLUETOOTH,
+                        ENUM_TRANSPORT.SERVICE_USB,
+                        ENUM_TRANSPORT.SERVICE_SERIAL
+                    };
+
+                    for (ENUM_TRANSPORT transport : transports) {
+                        try {
+                            Readers tempReaders = new Readers(context, transport);
+                            ArrayList<ReaderDevice> devices = tempReaders.GetAvailableRFIDReaderList();
+                            
+                            for (ReaderDevice device : devices) {
+                                HashMap<String, Object> readerInfo = new HashMap<>();
+                                readerInfo.put("name", device.getName() != null ? device.getName() : "Unknown");
+                                readerInfo.put("address", device.getAddress() != null ? device.getAddress() : "N/A");
+                                readerInfo.put("transport", transport.toString());
+                                
+                                // Check if this reader is already in the list (avoid duplicates)
+                                boolean exists = false;
+                                for (HashMap<String, Object> existing : readersList) {
+                                    if (existing.get("name").equals(readerInfo.get("name")) && 
+                                        existing.get("address").equals(readerInfo.get("address"))) {
+                                        exists = true;
+                                        break;
+                                    }
+                                }
+                                
+                                if (!exists) {
+                                    readersList.add(readerInfo);
+                                }
+                            }
+                            
+                            tempReaders.Dispose();
+                        } catch (Exception e) {
+                            Log.d(TAG, "Error getting readers for transport " + transport + ": " + e.getMessage());
+                        }
+                    }
+
+                    // Also check with ALL transport as fallback
+                    try {
+                        Readers allReaders = new Readers(context, ENUM_TRANSPORT.ALL);
+                        ArrayList<ReaderDevice> devices = allReaders.GetAvailableRFIDReaderList();
+                        
+                        for (ReaderDevice device : devices) {
+                            HashMap<String, Object> readerInfo = new HashMap<>();
+                            readerInfo.put("name", device.getName() != null ? device.getName() : "Unknown");
+                            readerInfo.put("address", device.getAddress() != null ? device.getAddress() : "N/A");
+                            readerInfo.put("transport", "ALL");
+                            
+                            // Check if this reader is already in the list
+                            boolean exists = false;
+                            for (HashMap<String, Object> existing : readersList) {
+                                if (existing.get("name").equals(readerInfo.get("name")) && 
+                                    existing.get("address").equals(readerInfo.get("address"))) {
+                                    exists = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!exists) {
+                                readersList.add(readerInfo);
+                            }
+                        }
+                        
+                        allReaders.Dispose();
+                    } catch (Exception e) {
+                        Log.d(TAG, "Error getting readers with ALL transport: " + e.getMessage());
+                    }
+
+                } catch (Exception e) {
+                    Log.d(TAG, "Error in getAvailableReaders: " + e.getMessage());
+                }
+                return readersList;
+            }
+
+            @Override
+            protected void onPostExecute(ArrayList<HashMap<String, Object>> readersList) {
+                if (result != null) {
+                    result.success(readersList);
+                }
+            }
+        }.execute();
+    }
+
+    ///Get current connection type
+    public void getConnectionType(final Result result) {
+        new AsyncTask<Void, Void, String>() {
+            @Override
+            protected String doInBackground(Void... voids) {
+                if (currentTransport != null) {
+                    return currentTransport.toString();
+                }
+                return null;
+            }
+
+            @Override
+            protected void onPostExecute(String transportType) {
+                if (result != null) {
+                    result.success(transportType);
+                }
+            }
+        }.execute();
     }
     
     public void locateTag(final String tagID, final Result result) {

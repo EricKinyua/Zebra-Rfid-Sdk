@@ -61,6 +61,16 @@ public class ZebraRfidSdkPlugin implements FlutterPlugin, MethodCallHandler, Str
         // boolean  isBluetooth=call.argument("isBluetooth");
         rfidHandler.connect(result);
         break;
+      case "connectToReader":
+        String readerName = call.argument("readerName");
+        rfidHandler.connectToReader(readerName, result);
+        break;
+      case "getAvailableReaders":
+        rfidHandler.getAvailableReaders(result);
+        break;
+      case "getConnectionType":
+        rfidHandler.getConnectionType(result);
+        break;
       case "getReadersList":
         rfidHandler.getReadersList();
         break;
